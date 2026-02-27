@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ABN Shuttle - Live Tracker</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        #map { height: 100vh; width: 100%; background: #020617; }
+        .sos-overlay { animation: pulse-red 1s infinite; }
+        @keyframes pulse-red {
+            0% { background: rgba(220, 38, 38, 0.8); }
+            50% { background: rgba(220, 38, 38, 1); }
+            100% { background: rgba(220, 38, 38, 0.8); }
+        }
+    </style>
+</head>
+<body class="bg-slate-950 overflow-hidden">
+
+    <div id="sos-banner" class="hidden fixed top-0 w-full z-[1000] p-4 text-center text-white font-black text-xl sos-overlay shadow-2xl">
+        🚨 EMERGENCY: SHUTTLE NEEDS ASSISTANCE! 🚨
+    </div>
+
+    <div id="map"></div>
+
+    <div class="fixed bottom-6 right-6 z-[1000] bg-slate-900/90 border border-slate-700 p-4 rounded-2xl text-white shadow-2xl backdrop-blur-md min-w-[200px]">
+        <h3 class="font-bold text-sky-400 mb-2 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Live Shuttles
+        </h3>
+        <div id="driver-list" class="space-y-2 text-sm">
+            <p class="text-slate-500 italic">Waiting for signal...</p>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const SB_URL = 'https://qbeacrpoyfacgmbzxjcu.supabase.co';
+        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiZWFjcnBveWZhY2dtYnp4amN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg2NTM5NTIsImV4cCI6MjA2NDIyOTk1Mn0.6kfxKLJxidW4BcqsMJte61AtzydrTW-1ZJIJytiUBt4';
+        
+        const supabaseClient = window.supabase.createClient(SB_URL, SB_KEY);
+
+        // Map Initialization
+        const map = L.map('map', { zoomControl: false }).setView([14.5995, 120.9842], 14);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+        let markers = {};
+
+        // Function to Update/Create Marker
+        function updateShuttleOnMap(data) {
+            const { id, driver_name, latitude, longitude, speed, is_emergency } = data;
+
+            // SOS Alert logic
+            const banner = document.getElementById('sos-banner');
+            is_emergency ? banner.classList.remove('hidden') : banner.classList.add('hidden');
+
+            if (!markers[id]) {
+                // Create new marker
+                markers[id] = L.marker([latitude, longitude]).addTo(map)
+                    .bindPopup(`<b>${driver_name}</b><br>Speed: ${speed} km/h`);
+            } else {
+                // Move existing marker
+                markers[id].setLatLng([latitude, longitude]);
+                markers[id].getPopup().setContent(`<b>${driver_name}</b><br>Speed: ${speed} km/h`);
+            }
+
+            // Update the side list
+            refreshDriverList();
+        }
+
+        function refreshDriverList() {
+            const list = document.getElementById('driver-list');
+            // Dito mo pwedeng ilista yung mga active drivers based sa 'markers' object
+            list.innerHTML = Object.keys(markers).length > 0 ? '' : '<p class="text-slate-500 italic">No shuttles online</p>';
+        }
+
+        // 1. INITIAL LOAD: Kunin ang mga drivers na online na
+        async function fetchInitialData() {
+            const { data, error } = await supabaseClient.from('shuttle_tracking').select('*');
+            if (data) data.forEach(driver => updateShuttleOnMap(driver));
+        }
+
+        // 2. REALTIME SUBSCRIPTION: Dito mangyayari ang magic
+        supabaseClient
+            .channel('shuttle-tracking-channel')
+            .on('postgres_changes', 
+                { event: '*', schema: 'public', table: 'shuttle_tracking' }, 
+                (payload) => {
+                    console.log('Change received!', payload);
+                    updateShuttleOnMap(payload.new);
+                }
+            )
+            .subscribe();
+
+        fetchInitialData();
+    </script>
+</body>
+</html>
