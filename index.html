@@ -3,167 +3,152 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>ABN Shuttle - Driver Console</title>
-    
+    <title>ABN Driver - Smart Console</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    
     <style>
-        #map { height: 40vh; width: 100%; z-index: 1; border-bottom: 2px solid #1e293b; }
-        .emergency-active { animation: pulse-red 1s infinite; background-color: #ef4444 !important; border: 2px solid white !important; }
+        #map { height: 40vh; width: 100%; border-bottom: 2px solid #1e293b; z-index: 1; }
+        .emergency-active { animation: pulse-red 1s infinite; background: #ef4444 !important; }
         @keyframes pulse-red {
             0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(239, 68, 68, 0); }
+            70% { transform: scale(1.05); box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
             100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
         }
-        body { background-color: #020617; }
     </style>
 </head>
-<body class="text-white min-h-screen flex flex-col">
-
-    <header class="p-4 bg-slate-900 flex justify-between items-center shadow-lg">
-        <img src="assets/abnlogo.png" alt="ABN" class="h-8 object-contain" onerror="this.style.display='none'">
-        <div id="connection-status" class="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase">
-            <span id="status-dot" class="w-2 h-2 rounded-full bg-red-500"></span> 
-            <span id="status-text">Offline</span>
-        </div>
-    </header>
+<body class="bg-slate-950 text-white min-h-screen flex flex-col">
 
     <div id="map"></div>
 
-    <main class="flex-1 p-6 space-y-4 bg-slate-950 rounded-t-3xl -mt-6 z-10 shadow-2xl overflow-y-auto">
+    <main class="flex-1 p-6 space-y-4 bg-slate-900 rounded-t-3xl -mt-6 z-10 shadow-2xl">
         
         <div id="login-section" class="py-4 space-y-4">
-            <div class="space-y-1">
-                <h2 class="text-xl font-bold text-sky-400">Driver Console</h2>
-                <p class="text-xs text-slate-500 italic">Enter your name to start live tracking.</p>
-            </div>
-            <input type="text" id="driver-input" placeholder="Driver Full Name" 
-                class="w-full p-4 bg-slate-900 rounded-2xl border border-slate-800 focus:border-sky-500 outline-none text-lg text-white transition-all">
-            <button id="btn-start" class="w-full bg-sky-600 hover:bg-sky-500 p-5 rounded-2xl font-black text-lg tracking-wide shadow-lg active:scale-95 transition-all">
-                GO ONLINE
+            <h2 class="text-xl font-black text-sky-400 uppercase tracking-widest">Driver Login</h2>
+            <input type="text" id="driver-input" placeholder="Enter Full Name" 
+                class="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-white focus:border-sky-500">
+            <button id="btn-start" class="w-full bg-sky-600 p-5 rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-all">
+                START TRIP
             </button>
         </div>
 
-        <div id="driver-dashboard" class="hidden space-y-6">
-            <div class="grid grid-cols-2 gap-4">
-                <div id="speed-card" class="bg-slate-900 p-4 rounded-3xl border border-slate-800 text-center">
-                    <p class="text-slate-500 text-[10px] uppercase font-bold">Speed</p>
-                    <p class="text-4xl font-black text-white" id="speed-val">0</p>
-                    <p class="text-[10px] text-slate-400 font-bold">KM/H</p>
+        <div id="driver-dashboard" class="hidden space-y-4">
+            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
+                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Next Potential Stop</p>
+                <h3 id="next-stop" class="text-lg font-bold text-sky-400">Searching...</h3>
+                <p id="stop-dist" class="text-xs text-slate-400 italic">Finding nearest station</p>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div class="bg-slate-800 p-4 rounded-2xl text-center border border-slate-700">
+                    <p class="text-[10px] text-slate-500 uppercase font-bold">Speed</p>
+                    <p class="text-3xl font-black" id="speed-val">0</p>
+                    <p class="text-[10px] text-slate-500">KM/H</p>
                 </div>
-                <div class="bg-slate-900 p-4 rounded-3xl border border-slate-800 text-center flex flex-col justify-center">
-                    <p class="text-slate-500 text-[10px] uppercase font-bold">GPS Status</p>
-                    <p class="text-sm font-bold text-green-400 mt-1">TRANSMITTING</p>
+                <div class="bg-slate-800 p-4 rounded-2xl text-center border border-slate-700 flex flex-col justify-center">
+                    <p class="text-[10px] text-slate-500 uppercase font-bold">Signal</p>
+                    <p id="gps-status" class="text-xs font-bold text-green-400 tracking-tighter mt-1">LIVE SYNC</p>
                 </div>
             </div>
 
-            <button id="btn-sos" class="w-full py-10 bg-slate-900 border-4 border-slate-800 rounded-3xl font-black text-4xl transition-all shadow-xl text-white">
+            <button id="btn-sos" class="w-full py-8 bg-slate-800 border-2 border-slate-700 rounded-2xl font-black text-3xl shadow-xl">
                 S O S
             </button>
             
-            <button onclick="location.reload()" class="w-full py-2 text-slate-600 text-xs font-bold hover:text-white transition-colors uppercase tracking-widest">
-                End Session
+            <button onclick="location.reload()" class="w-full py-2 text-slate-600 text-[10px] font-bold tracking-[0.2em] uppercase">
+                End Trip
             </button>
         </div>
     </main>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        // --- 1. CONFIGURATION ---
         const SB_URL = 'https://qbeacrpoyfacgmbzxjcu.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiZWFjcnBveWZhY2dtYnp4amN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg2NTM5NTIsImV4cCI6MjA2NDIyOTk1Mn0.6kfxKLJxidW4BcqsMJte61AtzydrTW-1ZJIJytiUBt4';
-        
-        // Consistent variable name: supabaseClient
         const supabaseClient = window.supabase.createClient(SB_URL, SB_KEY);
 
-        let map, marker, watchId, driverName;
-        let isEmergency = false;
-
-        // --- 2. MAP INIT ---
-        map = L.map('map', { zoomControl: false, attributionControl: false }).setView([14.5995, 120.9842], 16);
+        const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([14.25, 121.13], 14);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-        // --- 3. EVENT LISTENERS ---
-        document.getElementById('btn-start').addEventListener('click', startSession);
-        document.getElementById('btn-sos').addEventListener('click', toggleSOS);
+        // Same Pickup Points
+        const pickupPoints = [
+            { name: "Main Gate", lat: 14.271839, lng: 121.122121 },
+            { name: "ABN Company", lat: 14.258749, lng: 121.119243 },
+            { name: "Package World Backgate", lat: 14.259227, lng: 121.119139 },
+            { name: "Plant 2", lat: 14.260819, lng: 121.118248 },
+            { name: "Calamba Start", lat: 14.205630, lng: 121.153511 },
+            { name: "Parian", lat: 14.217508, lng: 121.143511 },
+            { name: "Mamatid", lat: 14.229745, lng: 121.137991 },
+            { name: "Banlic", lat: 14.232519, lng: 121.135631 },
+            { name: "Banay-Banay", lat: 14.253159, lng: 121.128701 },
+            { name: "Sala Cabuyao", lat: 14.267983, lng: 121.126553 }
+        ];
 
-        // --- 4. FUNCTIONS ---
-        async function startSession() {
+        let marker, watchId, driverName, isEmergency = false;
+
+        // Plot points for driver
+        pickupPoints.forEach(pt => {
+            L.circleMarker([pt.lat, pt.lng], { radius: 5, fillColor: "#fbbf24", color: "#fff", weight: 1, fillOpacity: 0.6 }).addTo(map);
+        });
+
+        document.getElementById('btn-start').addEventListener('click', () => {
             const input = document.getElementById('driver-input').value;
-            if (!input.trim()) return alert("Enter driver name first!");
-
+            if (!input.trim()) return alert("Enter Name!");
             driverName = input;
             document.getElementById('login-section').classList.add('hidden');
             document.getElementById('driver-dashboard').classList.remove('hidden');
-            
-            document.getElementById('status-dot').classList.replace('bg-red-500', 'bg-green-500');
-            document.getElementById('status-text').innerText = "Online";
-
             startTracking();
+        });
+
+        function calculateDistance(lat1, lon1, lat2, lon2) {
+            const R = 6371;
+            const dLat = (lat2-lat1)*Math.PI/180;
+            const dLon = (lon2-lon1)*Math.PI/180;
+            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
         }
 
         function startTracking() {
-            if ("geolocation" in navigator) {
-                watchId = navigator.geolocation.watchPosition(async (pos) => {
-                    const { latitude, longitude, speed } = pos.coords;
-                    const kmh = Math.round((speed || 0) * 3.6);
+            watchId = navigator.geolocation.watchPosition(async (pos) => {
+                const { latitude, longitude, speed } = pos.coords;
+                const kmh = Math.round((speed || 0) * 3.6);
+                
+                if (!marker) { marker = L.marker([latitude, longitude]).addTo(map); }
+                else { marker.setLatLng([latitude, longitude]); }
+                map.panTo([latitude, longitude]);
+                document.getElementById('speed-val').innerText = kmh;
 
-                    // Map Marker Update
-                    if (!marker) {
-                        marker = L.marker([latitude, longitude]).addTo(map);
-                    } else {
-                        marker.setLatLng([latitude, longitude]);
-                    }
-                    map.panTo([latitude, longitude]);
-                    document.getElementById('speed-val').innerText = kmh;
+                // Find nearest station to alert driver
+                let minVal = Infinity, nearest = null;
+                pickupPoints.forEach(pt => {
+                    const d = calculateDistance(latitude, longitude, pt.lat, pt.lng);
+                    if (d < minVal) { minVal = d; nearest = pt; }
+                });
 
-                    // Speed Card UI Alert
-                    const speedCard = document.getElementById('speed-card');
-                    if (kmh > 40) {
-                        speedCard.className = "bg-red-600 p-4 rounded-3xl text-center shadow-lg transition-colors";
-                    } else {
-                        speedCard.className = "bg-slate-900 p-4 rounded-3xl border border-slate-800 text-center transition-colors";
-                    }
+                if (nearest) {
+                    document.getElementById('next-stop').innerText = nearest.name;
+                    document.getElementById('stop-dist').innerText = minVal < 1 ? `${Math.round(minVal*1000)}m away` : `${minVal.toFixed(2)}km away`;
+                }
 
-                    // DATABASE UPDATE (Using supabaseClient)
-                    const driverSlug = driverName.toLowerCase().replace(/\s/g, '-');
-                    const { error } = await supabaseClient.from('shuttle_tracking').upsert({
-                        id: driverSlug,
-                        driver_name: driverName,
-                        latitude: latitude,
-                        longitude: longitude,
-                        speed: kmh,
-                        last_updated: new Date().toISOString()
-                    });
+                // Sync to Supabase
+                const slug = driverName.toLowerCase().replace(/\s/g, '-');
+                await supabaseClient.from('shuttle_tracking').upsert({
+                    id: slug, driver_name: driverName, latitude, longitude, speed: kmh, last_updated: new Date().toISOString()
+                });
 
-                    if (error) console.error("Update Error:", error.message);
-
-                }, (err) => {
-                    console.error("GPS Error:", err);
-                }, { enableHighAccuracy: true, maximumAge: 0 });
-            }
+            }, (err) => alert("GPS Error: " + err.message), { enableHighAccuracy: true });
         }
 
-        async function toggleSOS() {
+        document.getElementById('btn-sos').addEventListener('click', async () => {
             isEmergency = !isEmergency;
-            const btnSOS = document.getElementById('btn-sos');
-            const driverSlug = driverName.toLowerCase().replace(/\s/g, '-');
+            const btn = document.getElementById('btn-sos');
+            const slug = driverName.toLowerCase().replace(/\s/g, '-');
             
-            if (isEmergency) {
-                btnSOS.classList.add('emergency-active');
-                btnSOS.innerText = "HELP SENT";
-            } else {
-                btnSOS.classList.remove('emergency-active');
-                btnSOS.innerText = "S O S";
-            }
+            btn.className = isEmergency ? "w-full py-8 rounded-2xl font-black text-3xl shadow-xl emergency-active" : "w-full py-8 bg-slate-800 border-2 border-slate-700 rounded-2xl font-black text-3xl shadow-xl";
+            btn.innerText = isEmergency ? "HELP SENT" : "S O S";
 
-            // Update Emergency in DB
-            await supabaseClient.from('shuttle_tracking')
-                .update({ is_emergency: isEmergency })
-                .eq('id', driverSlug);
-        }
+            await supabaseClient.from('shuttle_tracking').update({ is_emergency: isEmergency }).eq('id', slug);
+        });
     </script>
 </body>
 </html>
