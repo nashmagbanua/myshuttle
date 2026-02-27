@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>ABN Shuttle - Driver</title>
+    
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        #map { height: 40vh; width: 100%; z-index: 1; border-bottom: 2px solid #1e293b; }
+        .emergency-active { animation: pulse-red 1s infinite; background-color: #ef4444 !important; border: 2px solid white; }
+        @keyframes pulse-red {
+            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1.02); box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
+            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        body { background-color: #020617; overflow: hidden; }
+    </style>
+</head>
+<body class="text-white min-h-screen flex flex-col">
+
+    <header class="p-4 bg-slate-900 flex justify-between items-center shadow-lg">
+        <img src="assets/abnlogo.png" alt="ABN" class="h-8 object-contain" onerror="this.style.display='none'">
+        <div id="connection-status" class="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase">
+            <span id="status-dot" class="w-2 h-2 rounded-full bg-red-500 animate-pulse"></span> 
+            <span id="status-text">Offline</span>
+        </div>
+    </header>
+
+    <div id="map"></div>
+
+    <main class="flex-1 p-6 space-y-4 bg-slate-950 rounded-t-3xl -mt-6 z-10 shadow-2xl overflow-y-auto">
+        
+        <div id="login-section" class="py-4 space-y-4">
+            <div class="space-y-1">
+                <h2 class="text-xl font-bold">Driver Console</h2>
+                <p class="text-xs text-slate-500 italic">Please enter your name to start tracking.</p>
+            </div>
+            <input type="text" id="driver-input" placeholder="Driver Full Name" 
+                class="w-full p-4 bg-slate-900 rounded-2xl border border-slate-800 focus:border-sky-500 outline-none text-lg transition-all">
+            <button id="btn-start" class="w-full bg-sky-600 hover:bg-sky-500 p-5 rounded-2xl font-black text-lg tracking-wide shadow-lg active:scale-95 transition-all">
+                GO ONLINE
+            </button>
+        </div>
+
+        <div id="driver-dashboard" class="hidden space-y-6 animate-in fade-in zoom-in duration-300">
+            <div class="grid grid-cols-2 gap-4">
+                <div id="speed-card" class="bg-slate-900 p-4 rounded-3xl border border-slate-800 text-center">
+                    <p class="text-slate-500 text-[10px] uppercase font-bold">Speed</p>
+                    <p class="text-4xl font-black" id="speed-val">0</p>
+                    <p class="text-[10px] text-slate-400">KM/H</p>
+                </div>
+                <div class="bg-slate-900 p-4 rounded-3xl border border-slate-800 text-center flex flex-col justify-center">
+                    <p class="text-slate-500 text-[10px] uppercase font-bold">GPS Status</p>
+                    <p class="text-sm font-bold text-sky-400 mt-1">ACTIVE</p>
+                </div>
+            </div>
+
+            <button id="btn-sos" class="w-full py-10 bg-slate-900 border-4 border-slate-800 rounded-3xl font-black text-4xl transition-all shadow-xl">
+                S O S
+            </button>
+            
+            <button id="btn-stop" class="w-full py-2 text-slate-600 text-xs font-bold hover:text-white transition-colors">
+                CLOSE SESSION
+            </button>
+        </div>
+    </main>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        // --- CONFIGURATION ---
+        const SB_URL = 'https://qbeacrpoyfacgmbzxjcu.supabase.co';
+        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiZWFjcnBveWZhY2dtYnp4amN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg2NTM5NTIsImV4cCI6MjA2NDIyOTk1Mn0.6kfxKLJxidW4BcqsMJte61AtzydrTW-1ZJIJytiUBt4';
+        
+        // Ensure supabase is initialized only ONCE
+        const supabase = window.supabase.createClient(SB_URL, SB_KEY);
+
+        let map, marker, watchId, driverName;
+        let isEmergency = false;
+
+        // --- MAP INIT ---
+        map = L.map('map', { zoomControl: false, attributionControl: false }).setView([14.5995, 120.9842], 16);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+
+        // --- EVENT LISTENERS (Para iwas 'is not defined' error) ---
+        document.getElementById('btn-start').addEventListener('click', startSession);
+        document.getElementById('btn-sos').addEventListener('click', toggleSOS);
+        document.getElementById('btn-stop').addEventListener('click', () => location.reload());
+
+        // --- CORE FUNCTIONS ---
+        async function startSession() {
+            const input = document.getElementById('driver-input').value;
+            if (!input.trim()) return alert("Enter driver name!");
+
+            driverName = input;
+            document.getElementById('login-section').classList.add('hidden');
+            document.getElementById('driver-dashboard').classList.remove('hidden');
+            
+            document.getElementById('status-dot').classList.replace('bg-red-500', 'bg-green-500');
+            document.getElementById('status-text').innerText = "Live";
+
+            startTracking();
+        }
+
+        function startTracking() {
+            if ("geolocation" in navigator) {
+                watchId = navigator.geolocation.watchPosition(async (pos) => {
+                    const { latitude, longitude, speed } = pos.coords;
+                    const kmh = Math.round((speed || 0) * 3.6);
+
+                    // Local Map Update
+                    if (!marker) {
+                        marker = L.marker([latitude, longitude]).addTo(map);
+                    } else {
+                        marker.setLatLng([latitude, longitude]);
+                    }
+                    map.panTo([latitude, longitude]);
+                    document.getElementById('speed-val').innerText = kmh;
+
+                    // Speed Warning UI
+                    const sc = document.getElementById('speed-card');
+                    sc.className = kmh > 40 ? "bg-red-600 p-4 rounded-3xl text-center shadow-lg transition-colors" : "bg-slate-900 p-4 rounded-3xl border border-slate-800 text-center transition-colors";
+
+                    // Supabase Update
+                    const driverSlug = driverName.toLowerCase().replace(/\s/g, '-');
+                    await supabase.from('shuttle_tracking').upsert({
+                        id: driverSlug,
+                        driver_name: driverName,
+                        latitude: latitude,
+                        longitude: longitude,
+                        speed: kmh,
+                        last_updated: new Date().toISOString()
+                    });
+
+                }, (err) => console.error(err), { enableHighAccuracy: true });
+            }
+        }
+
+        async function toggleSOS() {
+            isEmergency = !isEmergency;
+            const btn = document.getElementById('btn-sos');
+            const slug = driverName.toLowerCase().replace(/\s/g, '-');
+            
+            btn.className = isEmergency ? "w-full py-10 rounded-3xl font-black text-4xl transition-all shadow-xl emergency-active" : "w-full py-10 bg-slate-900 border-4 border-slate-800 rounded-3xl font-black text-4xl transition-all shadow-xl";
+            btn.innerText = isEmergency ? "HELP SENT" : "S O S";
+
+            await supabase.from('shuttle_tracking').update({ is_emergency: isEmergency })
+                .eq('id', slug);
+        }
+    </script>
+</body>
+</html>
