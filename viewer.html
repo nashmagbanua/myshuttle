@@ -22,7 +22,6 @@
             background: #0f172a; border: 1px solid #38bdf8;
             color: white; font-weight: bold; padding: 2px 8px; border-radius: 4px;
         }
-        /* Itago ang control panel ng routing machine */
         .leaflet-routing-container { display: none; }
     </style>
 </head>
@@ -54,7 +53,6 @@
     <script src="https://unpkg.com/leaflet-routing-machine@latest/dist/leaflet-routing-machine.js"></script>
     
     <script>
-        // --- 1. CONFIGURATION ---
         const SB_URL = 'https://qbeacrpoyfacgmbzxjcu.supabase.co';
         const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiZWFjcnBveWZhY2dtYnp4amN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg2NTM5NTIsImV4cCI6MjA2NDIyOTk1Mn0.6kfxKLJxidW4BcqsMJte61AtzydrTW-1ZJIJytiUBt4';
         const supabaseClient = window.supabase.createClient(SB_URL, SB_KEY);
@@ -62,7 +60,6 @@
         const map = L.map('map', { zoomControl: false }).setView([14.25, 121.13], 13);
         L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
 
-        // --- 2. PICKUP POINTS DATA ---
         const pickupPoints = [
             { name: "Main Gate", lat: 14.271839, lng: 121.122121 },
             { name: "ABN Company", lat: 14.258749, lng: 121.119243 },
@@ -82,16 +79,12 @@
         let routingControl = null;
         let nearestPoint = null;
 
-        // Plot Pickup Points (Yellow Pins)
         pickupPoints.forEach(pt => {
             L.circleMarker([pt.lat, pt.lng], {
                 radius: 6, fillColor: "#fbbf24", color: "#fff", weight: 2, opacity: 1, fillOpacity: 0.8
             }).addTo(map).bindTooltip(pt.name, { direction: 'top', className: 'text-[10px] font-bold' });
         });
 
-        // --- 3. CORE FUNCTIONS ---
-
-        // Watch Viewer Location
         if ("geolocation" in navigator) {
             navigator.geolocation.watchPosition((pos) => {
                 const { latitude, longitude } = pos.coords;
@@ -154,15 +147,27 @@
             const { id, driver_name, latitude, longitude, speed, is_emergency } = data;
             const container = document.getElementById('status-container');
 
-            // Update Shuttle Marker
+            // --- COLOR LOGIC FOR DRIVER MARKER ---
             if (!shuttleMarkers[id]) {
-                shuttleMarkers[id] = L.marker([latitude, longitude]).addTo(map)
-                    .bindTooltip(driver_name, { permanent: true, direction: 'top', className: 'driver-label' });
+                shuttleMarkers[id] = L.circleMarker([latitude, longitude], {
+                    radius: 10,
+                    fillColor: "#f97316", // ORANGE DEFAULT
+                    color: "#fff",
+                    weight: 3,
+                    opacity: 1,
+                    fillOpacity: 1
+                }).addTo(map).bindTooltip(driver_name, { permanent: true, direction: 'top', className: 'driver-label' });
             } else {
                 shuttleMarkers[id].setLatLng([latitude, longitude]);
+                
+                // Kapag Emergency, gawing RED at palakihin ang marker
+                if (is_emergency) {
+                    shuttleMarkers[id].setStyle({ fillColor: '#ff0000', radius: 12 });
+                } else {
+                    shuttleMarkers[id].setStyle({ fillColor: '#f97316', radius: 10 });
+                }
             }
 
-            // Update UI Card
             let card = document.getElementById(`card-${id}`);
             if (!card) {
                 card = document.createElement('div');
@@ -195,7 +200,6 @@
             is_emergency ? banner.classList.remove('hidden') : banner.classList.add('hidden');
         }
 
-        // --- 4. DATA SYNC ---
         supabaseClient.channel('live').on('postgres_changes', { event: '*', schema: 'public', table: 'shuttle_tracking' }, p => updateDisplay(p.new)).subscribe();
 
         async function init() {
