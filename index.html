@@ -2,153 +2,260 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>ABN Driver - Smart Console</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Employee - Kaizen Shuttle Tracker</title>
+    
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/html5-qrcode"></script>
+    
     <style>
-        #map { height: 40vh; width: 100%; border-bottom: 2px solid #1e293b; z-index: 1; }
-        .emergency-active { animation: pulse-red 1s infinite; background: #ef4444 !important; }
-        @keyframes pulse-red {
-            0% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-            70% { transform: scale(1.05); box-shadow: 0 0 0 15px rgba(239, 68, 68, 0); }
-            100% { transform: scale(1); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        :root { --primary: #0046ad; --accent: #059669; --dark: #1e293b; --danger: #dc3545; }
+        body { font-family: -apple-system, sans-serif; margin: 0; background: #f3f4f6; overflow: hidden; height: 100vh; }
+        #map { height: 100vh; width: 100vw; position: absolute; z-index: 1; }
+
+        #onboard-banner {
+            display: none; position: absolute; top: 0; left: 0; width: 100%; 
+            background: var(--accent); color: white; padding: 12px; text-align: center;
+            font-weight: bold; font-size: 0.9rem; z-index: 4000; box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         }
+
+        .status-overlay {
+            position: absolute; top: 60px; left: 15px; z-index: 1000;
+            background: white; padding: 15px; border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2); border-left: 6px solid var(--primary);
+            min-width: 180px;
+        }
+
+        /* MAP SETTINGS / BURGER MENU */
+        .map-settings { position: absolute; top: 65px; right: 15px; z-index: 2000; }
+        .burger-btn { background: white; border: none; width: 45px; height: 45px; border-radius: 50%; box-shadow: 0 4px 10px rgba(0,0,0,0.3); font-size: 1.2rem; cursor: pointer; }
+        .menu-content { 
+            display: none; position: absolute; right: 0; top: 55px; background: white; 
+            padding: 12px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); width: 180px; 
+        }
+        .menu-content.show { display: block; }
+
+        .fab-container { position: absolute; bottom: 30px; right: 20px; z-index: 2000; display: flex; flex-direction: column; gap: 15px; }
+        .fab { width: 65px; height: 65px; border-radius: 50%; border: none; color: white; font-size: 1.6rem; box-shadow: 0 4px 15px rgba(0,0,0,0.4); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .btn-reg { background: var(--primary); }
+        .btn-scan { background: var(--dark); }
+
+        .modal { display: none; position: fixed; z-index: 5000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); align-items: center; justify-content: center; }
+        .modal-content { background: white; padding: 25px; border-radius: 25px; width: 85%; max-width: 400px; text-align: center; }
+        
+        #reader { width: 100%; border-radius: 15px; overflow: hidden; background: #000; }
+        select, input { width: 100%; padding: 14px; margin: 10px 0; border-radius: 10px; border: 1px solid #cbd5e1; font-size: 1rem; box-sizing: border-box; }
+        
+        .stop-label { background: white; border: 2px solid var(--primary); padding: 4px 8px; font-size: 12px; font-weight: bold; color: var(--primary); border-radius: 6px; }
     </style>
 </head>
-<body class="bg-slate-950 text-white min-h-screen flex flex-col">
+<body>
 
-    <div id="map"></div>
+<div id="onboard-banner">✅ VERIFIED ON-BOARD | HAVE A SAFE RIDE</div>
 
-    <main class="flex-1 p-6 space-y-4 bg-slate-900 rounded-t-3xl -mt-6 z-10 shadow-2xl">
+<div class="status-overlay">
+    <div id="trip-direction" style="font-size: 0.7rem; font-weight: 800; color: #94a3b8;">WAITING...</div>
+    <div id="current-stop-name" style="font-weight: 900; font-size: 1.2rem; color: var(--dark); margin: 5px 0;">No Active Trip</div>
+    <div id="status-badge" style="font-size: 0.7rem; font-weight: bold; display: flex; align-items: center;">
+        <span id="pulse-dot" style="height: 8px; width: 8px; border-radius: 50%; background: #cbd5e1; margin-right: 6px;"></span>
+        <span id="status-text">OFFLINE</span>
+    </div>
+</div>
+
+<div class="map-settings">
+    <button class="burger-btn" onclick="toggleMenu()">☰</button>
+    <div id="settings-menu" class="menu-content">
+        <div style="font-size: 0.7rem; font-weight: bold; margin-bottom: 8px; color: #888;">MAP OPTIONS</div>
+        <label style="display:block; font-size:0.85rem; margin-bottom:10px; cursor:pointer;">
+            <input type="radio" name="view" value="smart" checked onchange="updateView()"> Bus + Next Stop
+        </label>
+        <label style="display:block; font-size:0.85rem; cursor:pointer;">
+            <input type="radio" name="view" value="shuttle" onchange="updateView()"> Bus Only
+        </label>
+    </div>
+</div>
+
+<div id="map"></div>
+
+<div class="fab-container">
+    <button id="scan-fab" class="fab btn-scan" onclick="openScanner()">📷</button>
+    <button id="reg-fab" class="fab btn-reg" onclick="openModal()">+</button>
+</div>
+
+<div id="arrivalModal" class="modal">
+    <div class="modal-content" style="border-top: 10px solid var(--success);">
+        <h1 style="font-size: 3rem; margin: 0;">📍</h1>
+        <h2 style="color: var(--accent); margin-top: 10px;">Arrived at Destination!</h2>
+        <p id="arrival-msg">You have reached your drop-off point.</p>
+        <button onclick="confirmArrival()" style="width:100%; padding:16px; background:var(--primary); color:white; border:none; border-radius:12px; font-weight:900; cursor:pointer;">CONFIRM & LOG OUT</button>
+    </div>
+</div>
+
+<div id="regModal" class="modal">
+    <div class="modal-content" style="text-align: left;">
+        <h2 style="margin:0 0 15px 0; color: var(--primary);">Join Trip</h2>
+        <input type="number" id="emp-id" placeholder="Employee ID">
+        <label style="font-size:0.7rem; font-weight:bold;">PICKUP</label>
+        <select id="pickup-node"></select>
+        <label style="font-size:0.7rem; font-weight:bold;">DROP-OFF</label>
+        <select id="dropoff-node"></select>
+        <button onclick="registerRide()" style="width:100%; padding:16px; background:var(--accent); color:white; border:none; border-radius:12px; font-weight:900; margin-top:10px;">CONFIRM</button>
+        <button onclick="closeModal()" style="width:100%; background:none; border:none; color:#94a3b8; margin-top:10px;">Cancel</button>
+    </div>
+</div>
+
+<div id="scanModal" class="modal">
+    <div class="modal-content" style="background:transparent; color:white;">
+        <div id="reader"></div>
+        <button onclick="closeScanner()" style="width:100%; padding:15px; background:white; color:var(--danger); border:none; border-radius:12px; font-weight:900; margin-top:10px;">CANCEL</button>
+    </div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    const routeLists = {
+        papasok: ["Calamba Old Market", "Parian Shuttle Station", "Mamatid", "Banlic / Waltermart", "San Isidro", "Pulo", "Banay-banay", "Katapatan", "Nestle Plant", "Niugan / St. Francis", "Sala Rotonda", "Sala Overpass", "Tanduay Gate", "ABI Gasoline Station", "Glass Plant", "Package World", "Plant 2", "Nutribev"],
+        palabas_nutribev: ["Nutribev", "Plant 2", "Package World", "Glass Plant", "ABI Gasoline Station", "Tanduay Gate", "Sala Overpass", "Sala Rotonda", "Niugan / St. Francis", "Nestle Plant", "Katapatan", "Banay-banay", "Pulo", "San Isidro", "Banlic / Waltermart", "Mamatid", "Parian Shuttle Station", "Calamba Old Market"],
+        palabas_abi: ["Transpo / ABI", "ABI Gasoline Station", "Tanduay Gate", "Sala Overpass", "Sala Rotonda", "Niugan / St. Francis", "Nestle Plant", "Katapatan", "Banay-banay", "Pulo", "San Isidro", "Banlic / Waltermart", "Mamatid", "Parian Shuttle Station", "Calamba Old Market"]
+    };
+
+    const allStops = { /* ... (Same coordinate data as before) ... */
+        "Calamba Old Market": { lat: 14.2056, lng: 121.1535 }, "Parian Shuttle Station": { lat: 14.2172, lng: 121.1436 }, "Mamatid": { lat: 14.2296, lng: 121.1380 }, "Banlic / Waltermart": { lat: 14.2324, lng: 121.1356 }, "San Isidro": { lat: 14.2384, lng: 121.1331 }, "Pulo": { lat: 14.2439, lng: 121.1309 }, "Banay-banay": { lat: 14.2509, lng: 121.1289 }, "Katapatan": { lat: 14.2561, lng: 121.1282 }, "Nestle Plant": { lat: 14.2603, lng: 121.1277 }, "Niugan / St. Francis": { lat: 14.2638, lng: 121.1273 }, "Sala Rotonda": { lat: 14.2679, lng: 121.1265 }, "Sala Overpass": { lat: 14.2710, lng: 121.1231 }, "Tanduay Gate": { lat: 14.2718, lng: 121.1221 }, "ABI Gasoline Station": { lat: 14.2693, lng: 121.1193 }, "Glass Plant": { lat: 14.2644, lng: 121.1183 }, "Package World": { lat: 14.2618, lng: 121.1187 }, "Plant 2": { lat: 14.2607, lng: 121.1179 }, "Nutribev": { lat: 14.2580, lng: 121.1206 }, "Transpo / ABI": { lat: 14.2687, lng: 121.1203 }
+    };
+
+    const map = L.map('map', { zoomControl: false }).setView([14.24, 121.13], 15);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+    const busIcon = L.icon({ iconUrl: 'https://cdn-icons-png.flaticon.com/512/3448/3448339.png', iconSize: [45, 45], iconAnchor: [22, 22] });
+    let busMarker = L.marker([14.2056, 121.1535], { icon: busIcon }).addTo(map);
+    
+    let stopMarkers = [];
+    let lastActiveRouteKey = "";
+    let currentViewMode = "smart";
+    let arrivalAlertShown = false;
+
+    function toggleMenu() { document.getElementById('settings-menu').classList.toggle('show'); }
+    function updateView() { currentViewMode = document.querySelector('input[name="view"]:checked').value; sync(); }
+
+    function sync() {
+        const state = JSON.parse(localStorage.getItem('shuttle_state') || '{}');
+        const myRide = JSON.parse(localStorage.getItem('my_ride_status') || '{}');
+
+        if (!state.activeRouteKey) {
+            document.getElementById('current-stop-name').innerText = "No Active Trip";
+            return;
+        }
+
+        if (state.activeRouteKey !== lastActiveRouteKey) {
+            updateDropdownOptions(state.activeRouteKey);
+            lastActiveRouteKey = state.activeRouteKey;
+        }
+
+        const route = routeLists[state.activeRouteKey];
+        const currentStop = route[state.currentIndex];
+        const coords = allStops[currentStop];
+
+        busMarker.setLatLng([coords.lat, coords.lng]);
+        map.panTo([coords.lat, coords.lng]);
+
+        document.getElementById('current-stop-name').innerText = currentStop;
+        document.getElementById('trip-direction').innerText = state.activeRouteKey.toUpperCase().replace('_', ' ');
+        document.getElementById('status-text').innerText = state.isMoving ? "MOVING" : "AT STOP";
+        document.getElementById('pulse-dot').style.background = state.isMoving ? "#0046ad" : "#059669";
+
+        // ARRIVAL LOGIC (Pogi Points)
+        if (myRide.boarded && !state.isMoving && currentStop === myRide.dropoff && !arrivalAlertShown) {
+            document.getElementById('arrival-msg').innerText = `Bus has arrived at ${currentStop}.`;
+            document.getElementById('arrivalModal').style.display = 'flex';
+            arrivalAlertShown = true;
+        }
+
+        if (myRide.boarded) {
+            document.getElementById('onboard-banner').style.display = 'block';
+            document.getElementById('scan-fab').style.display = 'none';
+            document.getElementById('reg-fab').style.display = 'none';
+        }
+
+        renderMarkers(currentStop, route[state.currentIndex + 1]);
+    }
+
+    function renderMarkers(active, next) {
+        stopMarkers.forEach(m => map.removeLayer(m));
+        stopMarkers = [];
+        Object.entries(allStops).forEach(([name, pos]) => {
+            let show = (currentViewMode === "smart" && (name === active || name === next)) || (currentViewMode === "shuttle" && name === active);
+            if (show) {
+                const isNext = name === next;
+                const m = L.circleMarker([pos.lat, pos.lng], { radius: isNext ? 6 : 9, color: isNext ? '#64748b' : '#dc3545', fillOpacity: 1 }).addTo(map);
+                if(isNext) m.bindTooltip("NEXT: " + name, { permanent: true, direction: 'top', className: 'stop-label' });
+                stopMarkers.push(m);
+            }
+        });
+    }
+
+    function updateDropdownOptions(key) {
+        const p = document.getElementById('pickup-node'), d = document.getElementById('dropoff-node');
+        p.innerHTML = ""; d.innerHTML = "";
+        routeLists[key].forEach(s => { p.add(new Option(s, s)); d.add(new Option(s, s)); });
+        d.value = routeLists[key][routeLists[key].length - 1];
+    }
+
+    function registerRide() {
+        const id = document.getElementById('emp-id').value;
+        const pickup = document.getElementById('pickup-node').value;
+        const dropoff = document.getElementById('dropoff-node').value;
+        if(!id) return alert("Enter ID");
         
-        <div id="login-section" class="py-4 space-y-4">
-            <h2 class="text-xl font-black text-sky-400 uppercase tracking-widest">Driver Login</h2>
-            <input type="text" id="driver-input" placeholder="Enter Full Name" 
-                class="w-full p-4 bg-slate-800 rounded-2xl border border-slate-700 outline-none text-white focus:border-sky-500">
-            <button id="btn-start" class="w-full bg-sky-600 p-5 rounded-2xl font-black text-lg shadow-lg active:scale-95 transition-all">
-                START TRIP
-            </button>
-        </div>
+        localStorage.setItem('my_ride_status', JSON.stringify({ boarded: false, dropoff: dropoff, id: id }));
+        
+        let manifest = JSON.parse(localStorage.getItem('passenger_manifest') || '[]');
+        manifest.push({ id, confirmed: false, from: pickup, to: dropoff });
+        localStorage.setItem('passenger_manifest', JSON.stringify(manifest));
+        
+        alert("Registered! Drop-off set to: " + dropoff);
+        closeModal();
+    }
 
-        <div id="driver-dashboard" class="hidden space-y-4">
-            <div class="bg-slate-800 p-4 rounded-2xl border border-slate-700">
-                <p class="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Next Potential Stop</p>
-                <h3 id="next-stop" class="text-lg font-bold text-sky-400">Searching...</h3>
-                <p id="stop-dist" class="text-xs text-slate-400 italic">Finding nearest station</p>
-            </div>
+    function confirmBoarding() {
+        const myRide = JSON.parse(localStorage.getItem('my_ride_status') || '{}');
+        myRide.boarded = true;
+        localStorage.setItem('my_ride_status', JSON.stringify(myRide));
 
-            <div class="grid grid-cols-2 gap-3">
-                <div class="bg-slate-800 p-4 rounded-2xl text-center border border-slate-700">
-                    <p class="text-[10px] text-slate-500 uppercase font-bold">Speed</p>
-                    <p class="text-3xl font-black" id="speed-val">0</p>
-                    <p class="text-[10px] text-slate-500">KM/H</p>
-                </div>
-                <div class="bg-slate-800 p-4 rounded-2xl text-center border border-slate-700 flex flex-col justify-center">
-                    <p class="text-[10px] text-slate-500 uppercase font-bold">Signal</p>
-                    <p id="gps-status" class="text-xs font-bold text-green-400 tracking-tighter mt-1">LIVE SYNC</p>
-                </div>
-            </div>
+        let state = JSON.parse(localStorage.getItem('shuttle_state') || '{}');
+        state.pax = (state.pax || 0) + 1;
+        localStorage.setItem('shuttle_state', JSON.stringify(state));
 
-            <button id="btn-sos" class="w-full py-8 bg-slate-800 border-2 border-slate-700 rounded-2xl font-black text-3xl shadow-xl">
-                S O S
-            </button>
-            
-            <button onclick="location.reload()" class="w-full py-2 text-slate-600 text-[10px] font-bold tracking-[0.2em] uppercase">
-                End Trip
-            </button>
-        </div>
-    </main>
+        alert("Confirmed On-Board!");
+        closeScanner();
+        sync();
+    }
 
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    <script>
-        const SB_URL = 'https://qbeacrpoyfacgmbzxjcu.supabase.co';
-        const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFiZWFjcnBveWZhY2dtYnp4amN1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg2NTM5NTIsImV4cCI6MjA2NDIyOTk1Mn0.6kfxKLJxidW4BcqsMJte61AtzydrTW-1ZJIJytiUBt4';
-        const supabaseClient = window.supabase.createClient(SB_URL, SB_KEY);
+    function confirmArrival() {
+        // Bawasan ang onboard count ni driver pagbaba
+        let state = JSON.parse(localStorage.getItem('shuttle_state') || '{}');
+        state.pax = Math.max(0, (state.pax || 0) - 1);
+        localStorage.setItem('shuttle_state', JSON.stringify(state));
 
-        const map = L.map('map', { zoomControl: false, attributionControl: false }).setView([14.25, 121.13], 14);
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(map);
+        // Clear local ride data
+        localStorage.removeItem('my_ride_status');
+        document.getElementById('arrivalModal').style.display = 'none';
+        arrivalAlertShown = false;
+        location.reload();
+    }
 
-        // Same Pickup Points
-        const pickupPoints = [
-            { name: "Main Gate", lat: 14.271839, lng: 121.122121 },
-            { name: "ABN Company", lat: 14.258749, lng: 121.119243 },
-            { name: "Package World Backgate", lat: 14.259227, lng: 121.119139 },
-            { name: "Plant 2", lat: 14.260819, lng: 121.118248 },
-            { name: "Calamba Start", lat: 14.205630, lng: 121.153511 },
-            { name: "Parian", lat: 14.217508, lng: 121.143511 },
-            { name: "Mamatid", lat: 14.229745, lng: 121.137991 },
-            { name: "Banlic", lat: 14.232519, lng: 121.135631 },
-            { name: "Banay-Banay", lat: 14.253159, lng: 121.128701 },
-            { name: "Sala Cabuyao", lat: 14.267983, lng: 121.126553 }
-        ];
-
-        let marker, watchId, driverName, isEmergency = false;
-
-        // Plot points for driver
-        pickupPoints.forEach(pt => {
-            L.circleMarker([pt.lat, pt.lng], { radius: 5, fillColor: "#fbbf24", color: "#fff", weight: 1, fillOpacity: 0.6 }).addTo(map);
+    let scanner;
+    function openScanner() {
+        document.getElementById('scanModal').style.display = 'flex';
+        scanner = new Html5Qrcode("reader");
+        scanner.start({ facingMode: "environment" }, { fps: 10, qrbox: 250 }, (text) => {
+            if(text === "KAIZEN_SHUTTLE_BOARD") confirmBoarding();
         });
+    }
+    function closeScanner() { if(scanner) scanner.stop().then(() => { document.getElementById('scanModal').style.display = 'none'; }); }
+    function openModal() { document.getElementById('regModal').style.display = 'flex'; }
+    function closeModal() { document.getElementById('regModal').style.display = 'none'; }
 
-        document.getElementById('btn-start').addEventListener('click', () => {
-            const input = document.getElementById('driver-input').value;
-            if (!input.trim()) return alert("Enter Name!");
-            driverName = input;
-            document.getElementById('login-section').classList.add('hidden');
-            document.getElementById('driver-dashboard').classList.remove('hidden');
-            startTracking();
-        });
-
-        function calculateDistance(lat1, lon1, lat2, lon2) {
-            const R = 6371;
-            const dLat = (lat2-lat1)*Math.PI/180;
-            const dLon = (lon2-lon1)*Math.PI/180;
-            const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-            return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-        }
-
-        function startTracking() {
-            watchId = navigator.geolocation.watchPosition(async (pos) => {
-                const { latitude, longitude, speed } = pos.coords;
-                const kmh = Math.round((speed || 0) * 3.6);
-                
-                if (!marker) { marker = L.marker([latitude, longitude]).addTo(map); }
-                else { marker.setLatLng([latitude, longitude]); }
-                map.panTo([latitude, longitude]);
-                document.getElementById('speed-val').innerText = kmh;
-
-                // Find nearest station to alert driver
-                let minVal = Infinity, nearest = null;
-                pickupPoints.forEach(pt => {
-                    const d = calculateDistance(latitude, longitude, pt.lat, pt.lng);
-                    if (d < minVal) { minVal = d; nearest = pt; }
-                });
-
-                if (nearest) {
-                    document.getElementById('next-stop').innerText = nearest.name;
-                    document.getElementById('stop-dist').innerText = minVal < 1 ? `${Math.round(minVal*1000)}m away` : `${minVal.toFixed(2)}km away`;
-                }
-
-                // Sync to Supabase
-                const slug = driverName.toLowerCase().replace(/\s/g, '-');
-                await supabaseClient.from('shuttle_tracking').upsert({
-                    id: slug, driver_name: driverName, latitude, longitude, speed: kmh, last_updated: new Date().toISOString()
-                });
-
-            }, (err) => alert("GPS Error: " + err.message), { enableHighAccuracy: true });
-        }
-
-        document.getElementById('btn-sos').addEventListener('click', async () => {
-            isEmergency = !isEmergency;
-            const btn = document.getElementById('btn-sos');
-            const slug = driverName.toLowerCase().replace(/\s/g, '-');
-            
-            btn.className = isEmergency ? "w-full py-8 rounded-2xl font-black text-3xl shadow-xl emergency-active" : "w-full py-8 bg-slate-800 border-2 border-slate-700 rounded-2xl font-black text-3xl shadow-xl";
-            btn.innerText = isEmergency ? "HELP SENT" : "S O S";
-
-            await supabaseClient.from('shuttle_tracking').update({ is_emergency: isEmergency }).eq('id', slug);
-        });
-    </script>
+    setInterval(sync, 2500);
+    sync();
+</script>
 </body>
 </html>
