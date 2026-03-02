@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Driver - Kaizen Shuttle Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <style>
+        :root { --primary: #0046ad; --success: #28a745; --warning: #ffc107; --danger: #dc3545; --dark: #1e293b; }
+        body { font-family: -apple-system, sans-serif; margin: 0; background: #f1f5f9; color: #333; }
+        .page { display: none; padding: 15px; flex-direction: column; min-height: 100vh; box-sizing: border-box; }
+        .active { display: flex; }
+        .card { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); margin-bottom: 15px; }
+        header { background: var(--primary); color: white; padding: 15px; border-radius: 0 0 15px 15px; text-align: center; margin: -15px -15px 15px -15px; position: relative;}
+        .main-action-btn { width: 100%; padding: 22px; border-radius: 15px; border: none; font-size: 1.3rem; font-weight: bold; color: white; cursor: pointer; }
+        .btn-depart { background: var(--success); }
+        .btn-arrive { background: var(--warning); color: #000; }
+        .btn-full { width: 100%; padding: 15px; margin: 10px 0; border-radius: 10px; border: 1px solid #ddd; font-size: 1rem; cursor: pointer; font-weight: bold;}
+        .master-list-container { overflow-x: auto; font-size: 0.75rem; margin-top: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #f1f5f9; padding: 10px; text-align: left; }
+        td { padding: 10px; border-bottom: 1px solid #eee; }
+        .status-tag { padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        .tag-scanned { background: #dcfce7; color: #166534; }
+        .tag-pending { background: #fef9c3; color: #854d0e; }
+        .smart-box { padding: 20px; border-radius: 15px; text-align: center; margin-bottom: 15px; border: 3px solid transparent; }
+        .pickup-focus { background: #dcfce7; border-color: #86efac; color: #166534; }
+        .smart-num { font-size: 3.5rem; font-weight: 900; line-height: 1; }
+        .cap-container { background: #e2e8f0; height: 10px; border-radius: 5px; margin: 10px 0; overflow: hidden; }
+        .cap-bar { height: 100%; background: var(--primary); transition: 0.3s; }
+        .btn-round { width: 50px; height: 50px; border-radius: 50%; border: none; background: #e2e8f0; font-size: 1.5rem; }
+        .modal { display: none; position: fixed; z-index: 3000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); align-items: center; justify-content: center; }
+        .modal-content { background: white; padding: 25px; border-radius: 20px; text-align: center; width: 85%; }
+        #start-point-div { display: none; margin-top: 10px; border-top: 1px solid #eee; padding-top: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="setup-page" class="page active">
+    <div class="card">
+        <h2 style="margin:0 0 20px 0; color: var(--primary);">Trip Dispatch</h2>
+        
+        <label style="font-size:0.8rem; font-weight:bold;">VEHICLE TYPE</label>
+        <select id="v-type" class="btn-full">
+            <option value="50">SHUTTLE BUS (50 Seater)</option>
+            <option value="15">SHUTTLE VAN (15 Seater)</option>
+        </select>
+
+        <label style="font-size:0.8rem; font-weight:bold;">ROUTE DIRECTION</label>
+        <select id="trip-type" class="btn-full" onchange="toggleStartPoint()">
+            <option value="papasok">PAPASOK (To Plant)</option>
+            <option value="palabas">PALABAS (Home Bound)</option>
+        </select>
+
+        <div id="start-point-div">
+            <label style="font-size:0.8rem; font-weight:bold; color:var(--danger);">SELECT HUB / TAMBAYAN:</label>
+            <select id="start-point" class="btn-full" style="border: 2px solid var(--danger);">
+                <option value="nutribev">START AT NUTRIBEV</option>
+                <option value="abi">START AT ABI / TRANSPO</option>
+            </select>
+        </div>
+
+        <button class="btn-full" style="background: var(--primary); color: white; margin-top: 20px;" onclick="initTrip()">START DISPATCH</button>
+    </div>
+</div>
+
+<div id="dash-page" class="page">
+    <header>
+        <div id="header-route" style="font-weight: bold; font-size: 0.9rem;">---</div>
+        <button onclick="showQR()" style="position:absolute; right:15px; top:12px; background:white; border:none; padding:6px 12px; border-radius:8px; font-weight:bold; font-size:0.7rem;">SHOW QR</button>
+    </header>
+
+    <div class="card" style="text-align:center;">
+        <h2 id="display-stop" style="margin: 0 0 10px 0; color: var(--primary); font-size: 1.4rem;">---</h2>
+        <div id="smart-display-box" class="smart-box pickup-focus">
+            <div id="smart-count" class="smart-num">0</div>
+            <div id="smart-label" style="font-weight: bold; font-size: 0.8rem;">---</div>
+        </div>
+        <button id="action-btn" class="main-action-btn btn-depart" onclick="handleAction()">DEPARTED</button>
+    </div>
+
+    <div class="card">
+        <strong style="font-size: 0.85rem;">MANIFEST (IN/OUT LOGS)</strong>
+        <div class="master-list-container">
+            <table id="master-table">
+                <thead>
+                    <tr>
+                        <th>Emp ID</th>
+                        <th>From</th>
+                        <th>To</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="master-list-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+            <button class="btn-round" onclick="updatePax(-1)">-</button>
+            <div style="text-align:center;">
+                <div id="display-pax" style="font-size: 2.2rem; font-weight: 900;">0</div>
+                <div style="font-size: 0.6rem; color: #64748b; font-weight: bold;">TOTAL ON BOARD</div>
+            </div>
+            <button class="btn-round" onclick="updatePax(1)">+</button>
+        </div>
+        <div class="cap-container"><div id="cap-bar" class="cap-bar"></div></div>
+    </div>
+    <button onclick="resetTrip()" style="background:none; border:none; color:var(--danger); font-size:0.7rem; text-decoration:underline; margin: 10px auto; display: block;">End Trip & Clear Data</button>
+</div>
+
+<div id="qrModal" class="modal">
+    <div class="modal-content">
+        <h3 style="margin:0;">Vehicle Boarding QR</h3>
+        <div id="qrcode" style="display:flex; justify-content:center; margin:20px 0;"></div>
+        <button class="btn-full" onclick="closeQR()">MINIMIZE</button>
+    </div>
+</div>
+
+<script>
+    const routes = {
+        papasok: ["Calamba Old Market", "Parian Shuttle Station", "Mamatid", "Banlic / Waltermart", "San Isidro", "Pulo", "Banay-banay", "Katapatan", "Nestle Plant", "Niugan / St. Francis", "Sala Rotonda", "Sala Overpass", "Tanduay Gate", "ABI Gasoline Station", "Glass Plant", "Package World", "Plant 2", "Nutribev"],
+        palabas_nutribev: ["Nutribev", "Plant 2", "Package World", "Glass Plant", "ABI Gasoline Station", "Tanduay Gate", "Sala Overpass", "Sala Rotonda", "Niugan / St. Francis", "Nestle Plant", "Katapatan", "Banay-banay", "Pulo", "San Isidro", "Banlic / Waltermart", "Mamatid", "Parian Shuttle Station", "Calamba Old Market"],
+        palabas_abi: ["Transpo / ABI", "ABI Gasoline Station", "Tanduay Gate", "Sala Overpass", "Sala Rotonda", "Niugan / St. Francis", "Nestle Plant", "Katapatan", "Banay-banay", "Pulo", "San Isidro", "Banlic / Waltermart", "Mamatid", "Parian Shuttle Station", "Calamba Old Market"]
+    };
+
+    let state = { type: 'papasok', currentIndex: 0, isMoving: false, pax: 0, maxCap: 50, activeRouteKey: 'papasok' };
+
+    function toggleStartPoint() {
+        const tripType = document.getElementById('trip-type').value;
+        document.getElementById('start-point-div').style.display = (tripType === 'palabas') ? 'block' : 'none';
+    }
+
+    function initTrip() {
+        const tripType = document.getElementById('trip-type').value;
+        const startPoint = document.getElementById('start-point').value;
+        
+        state.type = tripType;
+        state.maxCap = parseInt(document.getElementById('v-type').value);
+        state.currentIndex = 0; 
+        state.pax = 0; 
+        state.isMoving = false;
+
+        if (tripType === 'papasok') {
+            state.activeRouteKey = 'papasok';
+        } else {
+            state.activeRouteKey = (startPoint === 'nutribev') ? 'palabas_nutribev' : 'palabas_abi';
+        }
+
+        localStorage.removeItem('passenger_manifest');
+        save(); showPage('dash-page'); updateUI();
+    }
+
+    function handleAction() {
+        const route = routes[state.activeRouteKey];
+        if(!state.isMoving) state.isMoving = true;
+        else if(state.currentIndex < route.length - 1) { 
+            state.currentIndex++; state.isMoving = false; 
+        }
+        save(); updateUI();
+    }
+
+    function updateUI() {
+        const route = routes[state.activeRouteKey];
+        const stop = route[state.currentIndex];
+        const manifest = JSON.parse(localStorage.getItem('passenger_manifest') || '[]');
+        
+        // Counter Logic
+        // Kapag Papasok: Sino ang PICKUP (from)
+        // Kapag Palabas: Sino ang DROP-OFF (to)
+        const key = state.type === 'papasok' ? 'from' : 'to';
+        const atStopTotal = manifest.filter(p => p[key] === stop).length;
+        const atStopScanned = manifest.filter(p => p[key] === stop && p.confirmed).length;
+
+        document.getElementById('smart-count').innerText = `${atStopScanned} / ${atStopTotal}`;
+        document.getElementById('smart-label').innerText = state.type === 'papasok' ? "EXPECTED PICKUP" : "EXPECTED DROP-OFF";
+        
+        const listBody = document.getElementById('master-list-body');
+        listBody.innerHTML = manifest.length ? manifest.map(p => `
+            <tr>
+                <td>${p.id}</td>
+                <td style="color:#666">${p.from || '---'}</td>
+                <td style="color:#0046ad; font-weight:bold">${p.to || '---'}</td>
+                <td><span class="status-tag ${p.confirmed ? 'tag-scanned' : 'tag-pending'}">${p.confirmed ? 'DONE' : 'WAIT'}</span></td>
+            </tr>
+        `).reverse().join('') : '<tr><td colspan="4" style="text-align:center; color:#999;">Empty Manifest</td></tr>';
+
+        document.getElementById('display-pax').innerText = state.pax;
+        document.getElementById('cap-bar').style.width = (state.pax / state.maxCap * 100) + "%";
+        document.getElementById('display-stop').innerText = stop;
+        document.getElementById('header-route').innerText = state.activeRouteKey.toUpperCase().replace('_', ' ');
+        
+        const btn = document.getElementById('action-btn');
+        btn.innerText = state.isMoving ? "ARRIVE AT STOP" : "DEPARTED";
+        btn.className = "main-action-btn " + (state.isMoving ? "btn-arrive" : "btn-depart");
+    }
+
+    function updatePax(val) {
+        state.pax = Math.max(0, Math.min(state.maxCap, state.pax + val));
+        save(); updateUI();
+    }
+
+    let qr;
+    function showQR() {
+        document.getElementById('qrModal').style.display = 'flex';
+        if(!qr) qr = new QRCode(document.getElementById("qrcode"), { text: "KAIZEN_SHUTTLE_BOARD", width: 180, height: 180 });
+    }
+    function closeQR() { document.getElementById('qrModal').style.display = 'none'; }
+    function save() { localStorage.setItem('shuttle_state', JSON.stringify(state)); }
+    function showPage(id) { document.querySelectorAll('.page').forEach(p => p.classList.remove('active')); document.getElementById(id).classList.add('active'); }
+    function resetTrip() { if(confirm("Reset trip?")) { localStorage.clear(); location.reload(); } }
+    setInterval(updateUI, 2000);
+</script>
+</body>
+</html>
